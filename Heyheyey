@@ -1,0 +1,697 @@
+local CoreGui = game:GetService("CoreGui")
+local Players = game:GetService("Players")
+local HttpService = game:GetService("HttpService")
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local Clipboard = setclipboard or toclipboard or writeclipboard
+
+local player = Players.LocalPlayer
+
+local savedApiKey = ""
+local MODEL_NAME = "gpt-4o-mini"
+
+local function getApiUrl()
+    return "https://api.openai.com/v1/chat/completions"
+end
+
+local httpRequest = (syn and syn.request) or (http and http.request) or http_request or request
+
+local parentContainer
+if gethui then
+    parentContainer = gethui()
+elseif CoreGui then
+    parentContainer = CoreGui
+else
+    parentContainer = player:WaitForChild("PlayerGui")
+end
+
+if parentContainer:FindFirstChild("OpenAIDeltaChatGui") then
+    parentContainer.OpenAIDeltaChatGui:Destroy()
+end
+
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "OpenAIDeltaChatGui"
+screenGui.ResetOnSpawn = false
+screenGui.Parent = parentContainer
+
+local authFrame = Instance.new("Frame")
+authFrame.Name = "AuthFrame"
+authFrame.Size = UDim2.new(0, 320, 0, 310)
+authFrame.Position = UDim2.new(0.5, -160, 0.5, -155)
+authFrame.BackgroundColor3 = Color3.fromRGB(18, 18, 24)
+authFrame.BackgroundTransparency = 0.15
+authFrame.BorderSizePixel = 0
+authFrame.Active = true
+authFrame.Parent = screenGui
+
+Instance.new("UICorner", authFrame).CornerRadius = UDim.new(0, 10)
+
+local authStroke = Instance.new("UIStroke")
+authStroke.Color = Color3.fromRGB(16, 163, 127)
+authStroke.Thickness = 1.5
+authStroke.Parent = authFrame
+
+local authTopBar = Instance.new("Frame")
+authTopBar.Size = UDim2.new(1, 0, 0, 34)
+authTopBar.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
+authTopBar.BackgroundTransparency = 0.1
+authTopBar.BorderSizePixel = 0
+authTopBar.Parent = authFrame
+
+Instance.new("UICorner", authTopBar).CornerRadius = UDim.new(0, 10)
+
+local authFixBar = Instance.new("Frame")
+authFixBar.Size = UDim2.new(1, 0, 0, 8)
+authFixBar.Position = UDim2.new(0, 0, 1, -8)
+authFixBar.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
+authFixBar.BackgroundTransparency = 0.1
+authFixBar.BorderSizePixel = 0
+authFixBar.Parent = authTopBar
+
+local authTitle = Instance.new("TextLabel")
+authTitle.Size = UDim2.new(0, 200, 1, 0)
+authTitle.Position = UDim2.new(0, 10, 0, 0)
+authTitle.BackgroundTransparency = 1
+authTitle.Text = "Configurar API Key (ChatGPT)"
+authTitle.TextColor3 = Color3.fromRGB(240, 240, 240)
+authTitle.TextSize = 12
+authTitle.Font = Enum.Font.GothamBold
+authTitle.TextXAlignment = Enum.TextXAlignment.Left
+authTitle.Parent = authTopBar
+
+local authClose = Instance.new("TextButton")
+authClose.Size = UDim2.new(0, 24, 0, 24)
+authClose.Position = UDim2.new(1, -28, 0, 5)
+authClose.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+authClose.Text = "X"
+authClose.TextColor3 = Color3.fromRGB(255, 255, 255)
+authClose.TextSize = 11
+authClose.Font = Enum.Font.GothamBold
+authClose.Parent = authTopBar
+Instance.new("UICorner", authClose).CornerRadius = UDim.new(0, 5)
+authClose.MouseButton1Click:Connect(function() screenGui:Destroy() end)
+
+local infoContainer = Instance.new("ScrollingFrame")
+infoContainer.Size = UDim2.new(1, -24, 0, 45)
+infoContainer.Position = UDim2.new(0, 12, 0, 42)
+infoContainer.BackgroundTransparency = 1
+infoContainer.BorderSizePixel = 0
+infoContainer.ScrollBarThickness = 2
+infoContainer.ScrollBarImageColor3 = Color3.fromRGB(16, 163, 127)
+infoContainer.CanvasSize = UDim2.new(0, 0, 0, 0)
+infoContainer.AutomaticCanvasSize = Enum.AutomaticSize.Y
+infoContainer.Parent = authFrame
+
+local infoLabel = Instance.new("TextLabel")
+infoLabel.Size = UDim2.new(1, -6, 0, 0)
+infoLabel.AutomaticSize = Enum.AutomaticSize.Y
+infoLabel.BackgroundTransparency = 1
+infoLabel.Text = "<b>¿Qué API Key debes usar?</b>\nDebes usar una clave secreta de OpenAI que comience obligatoriamente con <b>sk-...</b> o <b>sk-proj-...</b>\n\n<b>Paso a paso:</b>\n1. Entra a platform.openai.com/api-keys con tu cuenta.\n2. Haz clic en 'Create new secret key'.\n3. Copia y pégala aquí para activar el chat con GPT-4o-mini."
+infoLabel.RichText = true
+infoLabel.TextColor3 = Color3.fromRGB(180, 180, 195)
+infoLabel.TextSize = 10
+infoLabel.Font = Enum.Font.Gotham
+infoLabel.TextXAlignment = Enum.TextXAlignment.Left
+infoLabel.TextYAlignment = Enum.TextYAlignment.Top
+infoLabel.TextWrapped = true
+infoLabel.Parent = infoContainer
+
+local toggleMoreBtn = Instance.new("TextButton")
+toggleMoreBtn.Size = UDim2.new(1, -24, 0, 16)
+toggleMoreBtn.Position = UDim2.new(0, 12, 0, 90)
+toggleMoreBtn.BackgroundTransparency = 1
+toggleMoreBtn.Text = "▼ Mostrar más"
+toggleMoreBtn.TextColor3 = Color3.fromRGB(16, 163, 127)
+toggleMoreBtn.TextSize = 10
+toggleMoreBtn.Font = Enum.Font.GothamBold
+toggleMoreBtn.TextXAlignment = Enum.TextXAlignment.Right
+toggleMoreBtn.Parent = authFrame
+
+local keyInputBox = Instance.new("TextBox")
+keyInputBox.Size = UDim2.new(1, -24, 0, 32)
+keyInputBox.Position = UDim2.new(0, 12, 0, 112)
+keyInputBox.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
+keyInputBox.BackgroundTransparency = 0.2
+keyInputBox.BorderSizePixel = 0
+keyInputBox.PlaceholderText = "Pega tu API Key (sk-...)"
+keyInputBox.PlaceholderColor3 = Color3.fromRGB(130, 130, 145)
+keyInputBox.Text = ""
+keyInputBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+keyInputBox.TextSize = 11
+keyInputBox.Font = Enum.Font.Gotham
+keyInputBox.ClearTextOnFocus = false
+keyInputBox.Parent = authFrame
+Instance.new("UICorner", keyInputBox).CornerRadius = UDim.new(0, 6)
+
+local tutorialBtn = Instance.new("TextButton")
+tutorialBtn.Size = UDim2.new(1, -24, 0, 20)
+tutorialBtn.Position = UDim2.new(0, 12, 0, 148)
+tutorialBtn.BackgroundTransparency = 1
+tutorialBtn.Text = "🔗 Tutorial: Obtener API Key de OpenAI"
+tutorialBtn.TextColor3 = Color3.fromRGB(16, 163, 127)
+tutorialBtn.TextSize = 10
+tutorialBtn.Font = Enum.Font.GothamBold
+tutorialBtn.TextXAlignment = Enum.TextXAlignment.Left
+tutorialBtn.Parent = authFrame
+tutorialBtn.MouseButton1Click:Connect(function()
+    if Clipboard then
+        pcall(function() Clipboard("https://platform.openai.com/api-keys") end)
+        tutorialBtn.Text = "🔗 ¡Enlace copiado al portapapeles!"
+        task.wait(2)
+        tutorialBtn.Text = "🔗 Tutorial: Obtener API Key de OpenAI"
+    end
+end)
+
+local continueBtn = Instance.new("TextButton")
+continueBtn.Size = UDim2.new(1, -24, 0, 34)
+continueBtn.Position = UDim2.new(0, 12, 0, 175)
+continueBtn.BackgroundColor3 = Color3.fromRGB(16, 163, 127)
+continueBtn.Text = "Continuar"
+continueBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+continueBtn.TextSize = 12
+continueBtn.Font = Enum.Font.GothamBold
+continueBtn.Parent = authFrame
+Instance.new("UICorner", continueBtn).CornerRadius = UDim.new(0, 6)
+
+local loaderContainer = Instance.new("Frame")
+loaderContainer.Size = UDim2.new(0, 45, 0, 45)
+loaderContainer.Position = UDim2.new(0.5, -22, 0, 220)
+loaderContainer.BackgroundTransparency = 1
+loaderContainer.Visible = false
+loaderContainer.Parent = authFrame
+
+local particleHolder = Instance.new("Frame")
+particleHolder.Size = UDim2.new(1, 0, 1, 0)
+particleHolder.BackgroundTransparency = 1
+particleHolder.Parent = loaderContainer
+
+local particleCount = 8
+local particles = {}
+for i = 1, particleCount do
+    local angle = (i / particleCount) * (math.pi * 2)
+    local dot = Instance.new("Frame")
+    dot.Size = UDim2.new(0, 6, 0, 6)
+    dot.Position = UDim2.new(0.5, math.cos(angle) * 16 - 3, 0.5, math.sin(angle) * 16 - 3)
+    dot.BackgroundColor3 = Color3.fromRGB(16, 163, 127)
+    dot.BackgroundTransparency = (i / particleCount) * 0.8
+    dot.BorderSizePixel = 0
+    dot.Parent = particleHolder
+    Instance.new("UICorner", dot).CornerRadius = UDim.new(1, 0)
+    table.insert(particles, dot)
+end
+
+local isExpanded = false
+toggleMoreBtn.MouseButton1Click:Connect(function()
+    isExpanded = not isExpanded
+    local tweenInfo = TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+    
+    if isExpanded then
+        TweenService:Create(authFrame, tweenInfo, {Size = UDim2.new(0, 320, 0, 360), Position = authFrame.Position - UDim2.new(0, 0, 0, 25)}):Play()
+        TweenService:Create(infoContainer, tweenInfo, {Size = UDim2.new(1, -24, 0, 115)}):Play()
+        TweenService:Create(toggleMoreBtn, tweenInfo, {Position = UDim2.new(0, 12, 0, 162)}):Play()
+        TweenService:Create(keyInputBox, tweenInfo, {Position = UDim2.new(0, 12, 0, 182)}):Play()
+        TweenService:Create(tutorialBtn, tweenInfo, {Position = UDim2.new(0, 12, 0, 218)}):Play()
+        TweenService:Create(continueBtn, tweenInfo, {Position = UDim2.new(0, 12, 0, 245)}):Play()
+        TweenService:Create(loaderContainer, tweenInfo, {Position = UDim2.new(0.5, -22, 0, 290)}):Play()
+        toggleMoreBtn.Text = "▲ Mostrar menos"
+        
+        task.defer(function()
+            infoContainer.CanvasPosition = Vector2.new(0, infoContainer.AbsoluteCanvasSize.Y)
+        end)
+    else
+        TweenService:Create(authFrame, tweenInfo, {Size = UDim2.new(0, 320, 0, 310), Position = authFrame.Position + UDim2.new(0, 0, 0, 25)}):Play()
+        TweenService:Create(infoContainer, tweenInfo, {Size = UDim2.new(1, -24, 0, 45)}):Play()
+        TweenService:Create(toggleMoreBtn, tweenInfo, {Position = UDim2.new(0, 12, 0, 90)}):Play()
+        TweenService:Create(keyInputBox, tweenInfo, {Position = UDim2.new(0, 12, 0, 112)}):Play()
+        TweenService:Create(tutorialBtn, tweenInfo, {Position = UDim2.new(0, 12, 0, 148)}):Play()
+        TweenService:Create(continueBtn, tweenInfo, {Position = UDim2.new(0, 12, 0, 175)}):Play()
+        TweenService:Create(loaderContainer, tweenInfo, {Position = UDim2.new(0.5, -22, 0, 220)}):Play()
+        toggleMoreBtn.Text = "▼ Mostrar más"
+    end
+end)
+
+local errorNotif = Instance.new("Frame")
+errorNotif.Size = UDim2.new(1, -24, 0, 42)
+errorNotif.Position = UDim2.new(0, 12, 1, -48)
+errorNotif.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
+errorNotif.BackgroundTransparency = 0.1
+errorNotif.BorderSizePixel = 0
+errorNotif.Visible = false
+errorNotif.Parent = authFrame
+Instance.new("UICorner", errorNotif).CornerRadius = UDim.new(0, 6)
+
+local redLine = Instance.new("Frame")
+redLine.Size = UDim2.new(1, 0, 0, 2)
+redLine.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
+redLine.BorderSizePixel = 0
+redLine.Parent = errorNotif
+
+local errorText = Instance.new("TextLabel")
+errorText.Size = UDim2.new(1, -10, 1, -4)
+errorText.Position = UDim2.new(0, 5, 0, 4)
+errorText.BackgroundTransparency = 1
+errorText.TextColor3 = Color3.fromRGB(255, 90, 90)
+errorText.TextSize = 10
+errorText.Font = Enum.Font.GothamBold
+errorText.TextXAlignment = Enum.TextXAlignment.Left
+errorText.TextWrapped = true
+errorText.Parent = errorNotif
+
+local function showErrorNotification(msg)
+    errorText.Text = msg
+    errorNotif.Visible = true
+    redLine.Size = UDim2.new(1, 0, 0, 2)
+    
+    local tweenInfo = TweenInfo.new(4, Enum.EasingStyle.Linear)
+    local tween = TweenService:Create(redLine, tweenInfo, {Size = UDim2.new(0, 0, 0, 2)})
+    tween:Play()
+    
+    task.delay(4, function()
+        errorNotif.Visible = false
+    end)
+end
+
+local mainFrame = Instance.new("Frame")
+mainFrame.Name = "MainFrame"
+mainFrame.Size = UDim2.new(0, 320, 0, 340)
+mainFrame.Position = UDim2.new(0.5, -160, 0.5, -170)
+mainFrame.BackgroundColor3 = Color3.fromRGB(18, 18, 24)
+mainFrame.BackgroundTransparency = 0.15
+mainFrame.BorderSizePixel = 0
+mainFrame.Visible = false
+mainFrame.Parent = screenGui
+
+Instance.new("UICorner", mainFrame).CornerRadius = UDim.new(0, 10)
+
+local stroke = Instance.new("UIStroke")
+stroke.Color = Color3.fromRGB(16, 163, 127)
+stroke.Thickness = 1.5
+stroke.Parent = mainFrame
+
+local topBar = Instance.new("Frame")
+topBar.Name = "TopBar"
+topBar.Size = UDim2.new(1, 0, 0, 34)
+topBar.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
+topBar.BackgroundTransparency = 0.1
+topBar.BorderSizePixel = 0
+topBar.Parent = mainFrame
+
+Instance.new("UICorner", topBar).CornerRadius = UDim.new(0, 10)
+
+local fixBar = Instance.new("Frame")
+fixBar.Size = UDim2.new(1, 0, 0, 8)
+fixBar.Position = UDim2.new(0, 0, 1, -8)
+fixBar.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
+fixBar.BackgroundTransparency = 0.1
+fixBar.BorderSizePixel = 0
+fixBar.Parent = topBar
+
+local titleLabel = Instance.new("TextLabel")
+titleLabel.Size = UDim2.new(0, 160, 1, 0)
+titleLabel.Position = UDim2.new(0, 10, 0, 0)
+titleLabel.BackgroundTransparency = 1
+titleLabel.Text = "ChatGPT (GPT-4o-mini)"
+titleLabel.TextColor3 = Color3.fromRGB(240, 240, 240)
+titleLabel.TextSize = 12
+titleLabel.Font = Enum.Font.GothamBold
+titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+titleLabel.Parent = topBar
+
+local minimizeButton = Instance.new("TextButton")
+minimizeButton.Size = UDim2.new(0, 24, 0, 24)
+minimizeButton.Position = UDim2.new(1, -56, 0, 5)
+minimizeButton.BackgroundColor3 = Color3.fromRGB(40, 40, 55)
+minimizeButton.Text = "-"
+minimizeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+minimizeButton.TextSize = 14
+minimizeButton.Font = Enum.Font.GothamBold
+minimizeButton.Parent = topBar
+Instance.new("UICorner", minimizeButton).CornerRadius = UDim.new(0, 5)
+
+local closeButton = Instance.new("TextButton")
+closeButton.Size = UDim2.new(0, 24, 0, 24)
+closeButton.Position = UDim2.new(1, -28, 0, 5)
+closeButton.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+closeButton.Text = "X"
+closeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+closeButton.TextSize = 11
+closeButton.Font = Enum.Font.GothamBold
+closeButton.Parent = topBar
+Instance.new("UICorner", closeButton).CornerRadius = UDim.new(0, 5)
+
+local minBubble = Instance.new("ImageButton")
+minBubble.Name = "MinBubble"
+minBubble.Size = UDim2.new(0, 50, 0, 50)
+minBubble.Position = UDim2.new(0.85, 0, 0.2, 0)
+minBubble.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
+minBubble.Image = "rbxassetid://6031094678"
+minBubble.Visible = false
+minBubble.Active = true
+minBubble.Parent = screenGui
+
+Instance.new("UICorner", minBubble).CornerRadius = UDim.new(1, 0)
+local bubbleStroke = Instance.new("UIStroke")
+bubbleStroke.Color = Color3.fromRGB(16, 163, 127)
+bubbleStroke.Thickness = 2
+bubbleStroke.Parent = minBubble
+
+local notifBadge = Instance.new("TextLabel")
+notifBadge.Name = "NotifBadge"
+notifBadge.Size = UDim2.new(0, 20, 0, 20)
+notifBadge.Position = UDim2.new(0.65, 0, -0.1, 0)
+notifBadge.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
+notifBadge.Text = "0"
+notifBadge.TextColor3 = Color3.fromRGB(255, 255, 255)
+notifBadge.TextSize = 10
+notifBadge.Font = Enum.Font.GothamBold
+notifBadge.Visible = false
+notifBadge.Parent = minBubble
+Instance.new("UICorner", notifBadge).CornerRadius = UDim.new(1, 0)
+
+local chatScroll = Instance.new("ScrollingFrame")
+chatScroll.Name = "ChatScroll"
+chatScroll.Size = UDim2.new(1, -12, 1, -86)
+chatScroll.Position = UDim2.new(0, 6, 0, 38)
+chatScroll.BackgroundTransparency = 1
+chatScroll.BorderSizePixel = 0
+chatScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+chatScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+chatScroll.ScrollBarThickness = 3
+chatScroll.ScrollBarImageColor3 = Color3.fromRGB(16, 163, 127)
+chatScroll.Parent = mainFrame
+
+local uiListLayout = Instance.new("UIListLayout")
+uiListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+uiListLayout.Padding = UDim.new(0, 6)
+uiListLayout.Parent = chatScroll
+
+local inputFrame = Instance.new("Frame")
+inputFrame.Name = "InputFrame"
+inputFrame.Size = UDim2.new(1, -12, 0, 34)
+inputFrame.Position = UDim2.new(0, 6, 1, -40)
+inputFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
+inputFrame.BackgroundTransparency = 0.2
+inputFrame.BorderSizePixel = 0
+inputFrame.Parent = mainFrame
+Instance.new("UICorner", inputFrame).CornerRadius = UDim.new(0, 6)
+
+local messageBox = Instance.new("TextBox")
+messageBox.Name = "MessageBox"
+messageBox.Size = UDim2.new(1, -40, 1, 0)
+messageBox.Position = UDim2.new(0, 8, 0, 0)
+messageBox.BackgroundTransparency = 1
+messageBox.PlaceholderText = "Escribe un mensaje..."
+messageBox.PlaceholderColor3 = Color3.fromRGB(130, 130, 145)
+messageBox.Text = ""
+messageBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+messageBox.TextSize = 12
+messageBox.Font = Enum.Font.Gotham
+messageBox.TextXAlignment = Enum.TextXAlignment.Left
+messageBox.ClearTextOnFocus = false
+messageBox.Parent = inputFrame
+
+local sendButton = Instance.new("TextButton")
+sendButton.Name = "SendButton"
+sendButton.Size = UDim2.new(0, 28, 0, 26)
+sendButton.Position = UDim2.new(1, -31, 0.5, -13)
+sendButton.BackgroundColor3 = Color3.fromRGB(16, 163, 127)
+sendButton.Text = "➤"
+sendButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+sendButton.TextSize = 11
+sendButton.Font = Enum.Font.GothamBold
+sendButton.Parent = inputFrame
+Instance.new("UICorner", sendButton).CornerRadius = UDim.new(0, 5)
+
+local function makeDraggable(frame, handle)
+    local dragging, dragInput, dragStart, startPos
+    handle.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            dragStart = input.Position
+            startPos = frame.Position
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then
+                    dragging = false
+                end
+            end)
+        end
+    end)
+    handle.InputChanged:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+            dragInput = input
+        end
+    end)
+    UserInputService.InputChanged:Connect(function(input)
+        if input == dragInput and dragging then
+            local delta = input.Position - dragStart
+            frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        end
+    end)
+end
+
+makeDraggable(authFrame, authTopBar)
+makeDraggable(mainFrame, topBar)
+makeDraggable(minBubble, minBubble)
+
+local unreadCount = 0
+local function updateBadge()
+    if unreadCount > 0 then
+        notifBadge.Text = tostring(unreadCount)
+        notifBadge.Visible = true
+    else
+        notifBadge.Visible = false
+    end
+end
+
+local isMinimized = false
+local function toggleMinimize(min)
+    isMinimized = min
+    mainFrame.Visible = not min
+    minBubble.Visible = min
+    if not min then
+        unreadCount = 0
+        updateBadge()
+    end
+end
+
+minimizeButton.MouseButton1Click:Connect(function() toggleMinimize(true) end)
+minBubble.MouseButton1Click:Connect(function() toggleMinimize(false) end)
+closeButton.MouseButton1Click:Connect(function() screenGui:Destroy() end)
+
+local function addMessage(sender, text, isError)
+    local msgContainer = Instance.new("Frame")
+    msgContainer.Size = UDim2.new(1, 0, 0, 0)
+    msgContainer.AutomaticSize = Enum.AutomaticSize.Y
+    msgContainer.BackgroundTransparency = 1
+    msgContainer.Parent = chatScroll
+    
+    local msgLabel = Instance.new("TextLabel")
+    msgLabel.Size = UDim2.new(1, -8, 0, 0)
+    msgLabel.Position = UDim2.new(0, 4, 0, 0)
+    msgLabel.AutomaticSize = Enum.AutomaticSize.Y
+    msgLabel.BackgroundTransparency = 1
+    msgLabel.Text = "<b>" .. sender .. ":</b> " .. text
+    msgLabel.RichText = true
+    msgLabel.TextColor3 = isError and Color3.fromRGB(255, 90, 90) or Color3.fromRGB(230, 230, 240)
+    msgLabel.TextSize = 12
+    msgLabel.Font = Enum.Font.Gotham
+    msgLabel.TextXAlignment = Enum.TextXAlignment.Left
+    msgLabel.TextWrapped = true
+    msgLabel.Parent = msgContainer
+    
+    if string.find(text, "```") then
+        local startIdx, endIdx = string.find(text, "```.-```")
+        local rawCode = text
+        if startIdx then
+            rawCode = string.sub(text, startIdx + 3, endIdx - 3)
+            rawCode = string.gsub(rawCode, "^%a+\n", "")
+        end
+        
+        msgLabel.Visible = false
+        
+        local codeFrame = Instance.new("Frame")
+        codeFrame.Size = UDim2.new(1, -8, 0, 0)
+        codeFrame.Position = UDim2.new(0, 4, 0, 2)
+        codeFrame.AutomaticSize = Enum.AutomaticSize.Y
+        codeFrame.BackgroundColor3 = Color3.fromRGB(28, 28, 38)
+        codeFrame.BorderSizePixel = 0
+        codeFrame.Parent = msgContainer
+        Instance.new("UICorner", codeFrame).CornerRadius = UDim.new(0, 6)
+        
+        local codeText = Instance.new("TextLabel")
+        codeText.Size = UDim2.new(1, -10, 0, 0)
+        codeText.Position = UDim2.new(0, 5, 0, 5)
+        codeText.AutomaticSize = Enum.AutomaticSize.Y
+        codeText.BackgroundTransparency = 1
+        codeText.Text = rawCode
+        codeText.TextColor3 = Color3.fromRGB(150, 220, 255)
+        codeText.TextSize = 11
+        codeText.Font = Enum.Font.Code
+        codeText.TextXAlignment = Enum.TextXAlignment.Left
+        codeText.TextWrapped = true
+        codeText.Parent = codeFrame
+        
+        local copyBtn = Instance.new("TextButton")
+        copyBtn.Size = UDim2.new(0, 100, 0, 22)
+        copyBtn.Position = UDim2.new(0, 5, 0, 0)
+        copyBtn.BackgroundColor3 = Color3.fromRGB(16, 163, 127)
+        copyBtn.Text = "📋 Copiar script"
+        copyBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+        copyBtn.TextSize = 10
+        copyBtn.Font = Enum.Font.GothamBold
+        copyBtn.Parent = msgContainer
+        Instance.new("UICorner", copyBtn).CornerRadius = UDim.new(0, 4)
+        
+        codeFrame.Position = UDim2.new(0, 4, 0, 18)
+        
+        copyBtn.MouseButton1Click:Connect(function()
+            if Clipboard then
+                pcall(function() Clipboard(rawCode) end)
+                copyBtn.Text = "¡Copiado!"
+                task.wait(1.5)
+                copyBtn.Text = "📋 Copiar script"
+            else
+                copyBtn.Text = "No compatible"
+            end
+        end)
+    end
+    
+    if isMinimized and sender ~= "Tú" then
+        unreadCount = unreadCount + 1
+        updateBadge()
+    end
+    
+    task.defer(function()
+        chatScroll.CanvasPosition = Vector2.new(0, chatScroll.AbsoluteCanvasSize.Y)
+    end)
+end
+
+continueBtn.MouseButton1Click:Connect(function()
+    local keyText = keyInputBox.Text
+    if keyText == "" then
+        showErrorNotification("Por favor ingresa una API Key válida.")
+        return
+    end
+    
+    continueBtn.Visible = false
+    loaderContainer.Visible = true
+    
+    local rotConn
+    local elapsed = 0
+    rotConn = RunService.RenderStepped:Connect(function(dt)
+        elapsed = elapsed + dt
+        particleHolder.Rotation = particleHolder.Rotation + (dt * 150)
+        if elapsed >= 8 then
+            rotConn:Disconnect()
+        end
+    end)
+    
+    task.spawn(function()
+        local success, response = pcall(function()
+            return httpRequest({
+                Url = getApiUrl(),
+                Method = "POST",
+                Headers = {
+                    ["Content-Type"] = "application/json",
+                    ["Authorization"] = "Bearer " .. keyText
+                },
+                Body = HttpService:JSONEncode({
+                    model = MODEL_NAME,
+                    messages = { { role = "user", content = "ping" } },
+                    max_tokens = 5
+                })
+            })
+        end)
+        
+        if elapsed < 8 then
+            task.wait(8 - elapsed)
+        end
+        if rotConn.Connected then
+            rotConn:Disconnect()
+        end
+        
+        loaderContainer.Visible = false
+        continueBtn.Visible = true
+        
+        local isValid = false
+        if success and response and response.Body then
+            local decoded = pcall(function() return HttpService:JSONDecode(response.Body) end)
+            if decoded then
+                local data = HttpService:JSONDecode(response.Body)
+                if data.choices or (data.error == nil) then
+                    isValid = true
+                end
+            end
+        end
+        
+        if isValid then
+            savedApiKey = keyText
+            authFrame.Visible = false
+            mainFrame.Visible = true
+            addMessage("Sistema", "ChatGPT inicializado correctamente.", false)
+        else
+            showErrorNotification("API Key inválida o sin fondos. Inténtalo de nuevo.")
+        end
+    end)
+end)
+
+local function enviarAChatGPT(mensajeTexto)
+    if mensajeTexto == "" then return end
+    
+    addMessage("Tú", mensajeTexto, false)
+    messageBox.Text = ""
+    
+    task.spawn(function()
+        if not httpRequest then
+            addMessage("Sistema", "Error: Tu ejecutor no soporta funciones HTTP.", true)
+            return
+        end
+        
+        local successReq, response = pcall(function()
+            return httpRequest({
+                Url = getApiUrl(),
+                Method = "POST",
+                Headers = {
+                    ["Content-Type"] = "application/json",
+                    ["Authorization"] = "Bearer " .. savedApiKey
+                },
+                Body = HttpService:JSONEncode({
+                    model = MODEL_NAME,
+                    messages = {
+                        { role = "system", content = "Eres un asistente experto en Roblox Luau. Responde directamente de forma técnica y con bloques de código markdown." },
+                        { role = "user", content = mensajeTexto }
+                    }
+                })
+            })
+        end)
+        
+        if successReq and response and response.Body then
+            local decodeSuccess, decodedResponse = pcall(function()
+                return HttpService:JSONDecode(response.Body)
+            end)
+            
+            if decodeSuccess and decodedResponse.choices and decodedResponse.choices[1] then
+                local respuestaGPT = decodedResponse.choices[1].message.content
+                addMessage("ChatGPT", respuestaGPT, false)
+            elseif decodedResponse and decodedResponse.error then
+                local errMsg = tostring(decodedResponse.error.message)
+                addMessage("Sistema", "Error API: " .. errMsg, true)
+                if string.find(errMsg, "quota") or string.find(errMsg, "invalid") or string.find(errMsg, "Key") or string.find(errMsg, "Billing") then
+                    mainFrame.Visible = false
+                    authFrame.Visible = true
+                    showErrorNotification("La API Key falló o no tiene créditos. Regístrala nuevamente.")
+                end
+            else
+                addMessage("Sistema", "Respuesta no válida de ChatGPT.", true)
+            end
+        else
+            addMessage("Sistema", "Fallo al conectar con OpenAI.", true)
+        end
+    end)
+end
+
+sendButton.MouseButton1Click:Connect(function() enviarAChatGPT(messageBox.Text) end)
+messageBox.FocusLost:Connect(function(enterPressed)
+    if enterPressed then enviarAChatGPT(messageBox.Text) end
+end)
